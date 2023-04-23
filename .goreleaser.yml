@@ -1,13 +1,14 @@
 builds:
-  - binary: igogpt
+  - id: igogpt
+    binary: igogpt
     main: ./cmd/igogpt
     goarch:
-      - "386"
       - amd64
       - arm64
       - arm
-    goarm:
-      - "6"
-      - "7"
 archives:
-  - format: zip
+  - id: igogpt
+    builds:
+      - igogpt
+    format: zip
+    name_template: 'igogpt_{{ .Version }}_{{- if eq .Os "darwin" }}macos{{- else }}{{ .Os }}{{ end }}_{{ .Arch }}'
