@@ -6,7 +6,7 @@
 
 This is a work in progress, so expect bugs and missing features.
 
-## Features
+## 🚀 Features
 
 ### Bing chat-based searches
 
@@ -31,7 +31,7 @@ Connect one chat with another chat and let them talk to each other.
 
 You can import the libraries in the `pkg` directory to use Bing or ChatGPT as `io.ReadWriter` in your own projects.
 
-## TODO list
+## 📝 TODO list
 
  - Web command: open a web page in the browser instead of using a http client.
  - Memory: use chroma, pinecone or similar to manage OpenAI chat memory.
@@ -42,7 +42,7 @@ You can import the libraries in the `pkg` directory to use Bing or ChatGPT as `i
  - Add more commands.
  - Drink more coffee.
 
-## Installation
+## 📦 Installation
 
 You can use the Golang binary to install **igoGPT**:
 
@@ -52,7 +52,7 @@ go install github.com/igolaizola/igogpt/cmd/igogpt@latest
 
 Or you can download the binary from the [releases](https://github.com/igolaizola/igogpt/releases)
 
-## Usage
+## 🕹️ Usage
 
 ### Configuration
 
@@ -144,7 +144,7 @@ Or you can try letting the program to launch the browser automatically:
 igogpt create-bing-session
 ```
 
-## Parameters
+## 🛠️ Parameters
 
 You can use the `--help` flag to see all available options.
 
@@ -181,7 +181,7 @@ You can use the `--help` flag to see all available options.
  - `bing-wait` (duration) wait time between requests (e.g. 5s).
  - `bing-session` (string) path to the bing session file.
  
-## FAQ
+## ❓ FAQ
 
 ### How do I launch a browser with remote debugging enabled?
 
@@ -215,7 +215,7 @@ Use `ping 0.tcp.ngrok.io` to get the ip address.
 
 This also works if you are having troubles to connect from WSL to Windows.
 
-## Disclaimer
+## ⚠️ Disclaimer
 
 The automation of Bing Chat and ChatGPT accounts is a violation of their Terms of Service and will result in your account(s) being terminated.
 
@@ -224,7 +224,7 @@ Read about Bing Chat and ChatGPT Terms of Service and Community Guidelines.
 **igoGPT** was written as a proof of concept and the code has been released for educational purposes only.
 The authors are released of any liabilities which your usage may entail.
 
-## Support
+## 💖 Support
 
 If you have found my code helpful, please give the repository a star ⭐
 
@@ -256,7 +256,7 @@ Or donate to any of my crypto addresses:
 
 Thanks for your support!
 
-## Resources
+## 📚 Resources
 
 Some of the resources I used to create this project:
 
