@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/PullRequestInc/go-gpt3"
-	"github.com/igolaizola/igogpt/internal/memory"
 	"github.com/igolaizola/igogpt/internal/ratelimit"
+	"github.com/igolaizola/igogpt/pkg/memory"
 )
 
 type Client struct {

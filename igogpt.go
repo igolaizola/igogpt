@@ -12,10 +12,10 @@ import (
 	"time"
 
 	"github.com/igolaizola/igogpt/internal/command"
-	"github.com/igolaizola/igogpt/internal/memory/fixed"
 	"github.com/igolaizola/igogpt/internal/prompt"
 	"github.com/igolaizola/igogpt/pkg/bing"
 	"github.com/igolaizola/igogpt/pkg/chatgpt"
+	"github.com/igolaizola/igogpt/pkg/memory/fixed"
 	"github.com/igolaizola/igogpt/pkg/openai"
 )
 

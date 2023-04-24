@@ -3,7 +3,7 @@ package fixed
 import (
 	"fmt"
 
-	"github.com/igolaizola/igogpt/internal/memory"
+	"github.com/igolaizola/igogpt/pkg/memory"
 	"github.com/tiktoken-go/tokenizer"
 )
 
