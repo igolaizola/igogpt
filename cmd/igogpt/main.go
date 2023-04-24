@@ -57,7 +57,7 @@ func newCommand() *ffcli.Command {
 
 func newRunCommand(action string) *ffcli.Command {
 	fs := flag.NewFlagSet(action, flag.ExitOnError)
-	_ = fs.String("config", "igogpt.yaml", "config file (optional)")
+	_ = fs.String("config", "", "config file, e.g: igogpt.yaml (optional)")
 
 	cfg := &igogpt.Config{}
 	fs.StringVar(&cfg.AI, "ai", "chatgpt", "ai (openai, chatgpt, bing)")
