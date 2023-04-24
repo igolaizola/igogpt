@@ -340,7 +340,7 @@ func newLogger(rw io.ReadWriter, dir string) (io.ReadWriteCloser, error) {
 		if err := os.MkdirAll(dir, 0700); err != nil {
 			return nil, err
 		}
-		filename := fmt.Sprintf("log-%s.txt", time.Now().Format("2006-01-02-15-04-05"))
+		filename := fmt.Sprintf("log_%s.txt", time.Now().Format("20060102_150405"))
 		filename = filepath.Join(dir, filename)
 		var err error
 		f, err = os.OpenFile(filename, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
