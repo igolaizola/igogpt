@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net"
 	httpgo "net/http"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -18,8 +17,7 @@ import (
 )
 
 func NewDialer(ja3, userAgent, lang, proxyURL string) (func(ctx context.Context, network, addr string) (net.Conn, error), error) {
-	var dialer proxy.ContextDialer
-	dialer = &ctxDialer{Dialer: proxy.Direct}
+	dialer := &ctxDialer{Dialer: proxy.Direct}
 	rt := newRoundTripper(ja3, userAgent, lang, dialer).(*roundTripper)
 	return rt.dialer.DialContext, nil
 }
@@ -83,15 +81,7 @@ type roundTripper struct {
 }
 
 func (rt *roundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
-	chromeVersion := "109"
-	if idx := strings.Index(rt.UserAgent, "Chrome/"); idx != -1 {
-		candidate := strings.Split(rt.UserAgent[idx+7:], ".")[0]
-		if _, err := strconv.Atoi(chromeVersion); err == nil {
-			chromeVersion = candidate
-		}
-	}
 	req.Header.Set("accept-language", rt.Language)
-	//req.Header.Set("sec-ch-ua", fmt.Sprintf(`"Not A;Brand";v="99", "Google Chrome";v="%s", "Chromium";v="%s"`, chromeVersion, chromeVersion))
 	req.Header.Set("sec-ch-ua-mobile", "?0")
 	req.Header.Set("sec-ch-ua-platform", `"Windows"`)
 	req.Header.Set("user-agent", rt.UserAgent)
@@ -252,12 +242,4 @@ func parseUserAgent(userAgent string) string {
 	default:
 		return chrome
 	}
-}
-
-type contextDialer struct {
-	proxy.Dialer
-}
-
-func (d *contextDialer) DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
-	return d.Dial(network, addr)
 }

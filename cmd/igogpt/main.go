@@ -112,7 +112,9 @@ func newRunCommand(action string) *ffcli.Command {
 		ShortHelp: fmt.Sprintf("igogpt %s", action),
 		FlagSet:   fs,
 		Exec: func(ctx context.Context, args []string) error {
-			loadSession(fsBingSession, cfg.BingSessionFile)
+			if err := loadSession(fsBingSession, cfg.BingSessionFile); err != nil {
+				return err
+			}
 			return igogpt.Run(ctx, action, cfg)
 		},
 	}
@@ -185,15 +187,4 @@ func loadSession(fs *flag.FlagSet, file string) error {
 		ff.WithConfigFile(file),
 		ff.WithConfigFileParser(ffyaml.Parser),
 	}...)
-}
-
-type fsStrings []string
-
-func (f *fsStrings) String() string {
-	return strings.Join(*f, ",")
-}
-
-func (f *fsStrings) Set(value string) error {
-	*f = append(*f, value)
-	return nil
 }

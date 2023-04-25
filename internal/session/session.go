@@ -110,10 +110,12 @@ func Bing(ctx context.Context, cfg *Config) error {
 	defer cancel()
 
 	// Launch stealth plugin
-	chromedp.Run(
+	if err := chromedp.Run(
 		ctx,
 		chromedp.Evaluate(stealth.JS, nil),
-	)
+	); err != nil {
+		return fmt.Errorf("session: could not launch stealth plugin: %w", err)
+	}
 
 	// disable webdriver
 	if err := chromedp.Run(ctx, chromedp.ActionFunc(func(cxt context.Context) error {
