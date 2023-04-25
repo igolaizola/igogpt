@@ -415,7 +415,7 @@ func (c *ListFilesCommand) Run(ctx context.Context, args []any) any {
 		if info.IsDir() {
 			name += "/"
 		}
-		items = append(items, info.Name())
+		items = append(items, name)
 		return nil
 	})
 	if err != nil {

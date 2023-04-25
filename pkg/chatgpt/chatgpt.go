@@ -73,10 +73,12 @@ func New(ctx context.Context, wait time.Duration, remote, proxy string, profile 
 	)
 
 	// Launch stealth plugin
-	chromedp.Run(
+	if err := chromedp.Run(
 		ctx,
 		chromedp.Evaluate(stealth.JS, nil),
-	)
+	); err != nil {
+		return nil, fmt.Errorf("chatgpt: could not launch stealth plugin: %w", err)
+	}
 
 	// disable webdriver
 	if err := chromedp.Run(ctx, chromedp.ActionFunc(func(cxt context.Context) error {

@@ -59,7 +59,11 @@ func (c *conn) Write(b []byte) (n int, err error) {
 		return 0, err
 	}
 
-	go m.Worker()
+	go func() {
+		if err := m.Worker(); err != nil {
+			log.Println(fmt.Errorf("bing: failed to get answer: %w", err))
+		}
+	}()
 
 	for range m.Chan {
 		if m.Final {
