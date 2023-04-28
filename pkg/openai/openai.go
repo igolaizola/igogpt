@@ -2,6 +2,7 @@ package openai
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -94,16 +95,34 @@ func (r *rw) Write(b []byte) (n int, err error) {
 	unlock := r.rateLimit.Lock(r.ctx)
 	defer unlock()
 
-	completion, err := r.client.ChatCompletion(r.ctx, gpt3.ChatCompletionRequest{
+	request := &gpt3.ChatCompletionRequest{
 		Model:     r.model,
 		Messages:  messages,
 		MaxTokens: r.client.maxTokens,
-	})
-	if err != nil {
-		return 0, fmt.Errorf("couldn't generate completion: %w", err)
 	}
+	var completion *gpt3.ChatCompletionResponse
+	for {
+		// Generate completion
+		completion, err = r.client.ChatCompletion(r.ctx, *request)
+		var gptErr *gpt3.APIError
+		if errors.As(err, &gptErr) && gptErr.StatusCode == 429 {
+			// Rate limit error, wait and try again
+			log.Println("openai: too many requests, waiting for 30 seconds...")
+			select {
+			case <-time.After(30 * time.Second):
+			case <-r.ctx.Done():
+				return 0, r.ctx.Err()
+			}
+			continue
+		}
+		if err != nil {
+			return 0, fmt.Errorf("openai: couldn't generate completion: %w", err)
+		}
+		break
+	}
+
 	if len(completion.Choices) == 0 {
-		return 0, fmt.Errorf("no choices")
+		return 0, fmt.Errorf("openai: no choices")
 	}
 	response := completion.Choices[0].Message.Content
 	log.Printf("openai: request tokens %d", completion.Usage.TotalTokens)
