@@ -18,25 +18,32 @@ import (
 )
 
 type runner struct {
-	bing     io.ReadWriter
-	output   string
 	commands map[string]Command
 }
 
+// Config represents the configuration for a command runner.
+type Config struct {
+	Exit      func()
+	Output    string
+	Bing      io.ReadWriter
+	GoogleKey string
+	GoogleCX  string
+}
+
 // New returns a new command runner.
-func New(bing io.ReadWriter, googleKey, googleCX, output string, exit func()) *runner {
+func New(cfg *Config) *runner {
 	cmds := []Command{
-		&BashCommand{output: output},
-		&BingCommand{chat: bing},
-		&GoogleCommand{key: googleKey, cx: googleCX},
+		&BashCommand{output: cfg.Output},
+		&BingCommand{chat: cfg.Bing},
+		&GoogleCommand{key: cfg.GoogleKey, cx: cfg.GoogleCX},
 		&WebCommand{},
 		NewNopCommand("talk"), NewNopCommand("think"),
 		// File commands
-		&ReadFileCommand{output: output},
-		&WriteFileCommand{output: output},
-		&DeleteFileCommand{output: output},
-		&ListFilesCommand{output: output},
-		&ExitCommand{exit: exit},
+		&ReadFileCommand{output: cfg.Output},
+		&WriteFileCommand{output: cfg.Output},
+		&DeleteFileCommand{output: cfg.Output},
+		&ListFilesCommand{output: cfg.Output},
+		&ExitCommand{exit: cfg.Exit},
 	}
 
 	lookupCmds := map[string]Command{}
@@ -44,8 +51,6 @@ func New(bing io.ReadWriter, googleKey, googleCX, output string, exit func()) *r
 		lookupCmds[cmd.Name()] = cmd
 	}
 	return &runner{
-		bing:     bing,
-		output:   output,
 		commands: lookupCmds,
 	}
 }

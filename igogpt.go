@@ -192,7 +192,13 @@ func Auto(ctx context.Context, cfg *Config) error {
 
 	// Command runner
 	ctx, exit := context.WithCancel(ctx)
-	runner := command.New(bingChat, cfg.GoogleKey, cfg.GoogleCX, cfg.Output, exit)
+	runner := command.New(&command.Config{
+		Exit:      exit,
+		Output:    cfg.Output,
+		Bing:      bingChat,
+		GoogleKey: cfg.GoogleKey,
+		GoogleCX:  cfg.GoogleCX,
+	})
 
 	send := prmpt
 	log.Println("starting auto mode")
@@ -310,7 +316,14 @@ func Pair(ctx context.Context, cfg *Config) error {
 // Cmd runs a command and returns the result
 func Cmd(ctx context.Context, cfg *Config) error {
 	// Bing chat not being available in this mode
-	runner := command.New(&notAvailable{}, cfg.GoogleKey, cfg.GoogleCX, cfg.Output, func() {})
+	runner := command.New(&command.Config{
+		Exit:      func() {},
+		Output:    cfg.Output,
+		Bing:      &notAvailable{},
+		GoogleKey: cfg.GoogleKey,
+		GoogleCX:  cfg.GoogleCX,
+	})
+
 	// TODO: custom parameter for json input
 	result := runner.Run(ctx, cfg.Prompt)
 	out, err := json.MarshalIndent(result, "", "  ")
