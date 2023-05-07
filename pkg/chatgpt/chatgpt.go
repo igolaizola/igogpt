@@ -158,12 +158,6 @@ func (c *Client) Chat(ctx context.Context, model string) (io.ReadWriteCloser, er
 	if !strings.Contains(url, suffix) {
 		// Navigating to the URL didn't work, try clicking on the model selector
 
-		// Determine which model option to select
-		option := 1
-		if model == "gpt-4" {
-			option = 2
-		}
-
 		// Click on model selector
 		ctx, cancel := context.WithTimeout(tabCtx, 5*time.Second)
 		defer cancel()
@@ -173,6 +167,26 @@ func (c *Client) Chat(ctx context.Context, model string) (io.ReadWriteCloser, er
 			return nil, fmt.Errorf("chatgpt: couldn't click on model selector: %w", err)
 		}
 		time.Sleep(200 * time.Millisecond)
+
+		// Obtain the model options
+		var models []string
+		if err := chromedp.Run(ctx,
+			chromedp.Evaluate(`Array.from(document.querySelectorAll("ul li")).map(e => e.innerText)`, &models),
+		); err != nil {
+			return nil, fmt.Errorf("chatgpt: couldn't obtain model options: %w", err)
+		}
+
+		// Determine which model option to select
+		var option int
+		for i, m := range models {
+			if model != strings.ToLower(m) {
+				continue
+			}
+			option = i + 1
+		}
+		if option == 0 {
+			return nil, fmt.Errorf("chatgpt: couldn't find model option %s", model)
+		}
 
 		// Click on model option
 		if err := chromedp.Run(ctx,
