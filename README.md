@@ -61,7 +61,7 @@ Or you can download the binary from the [releases](https://github.com/igolaizola
 ### Configuration
 
 To launch **igoGPT** you need to configure different settings.
-Go the parameters section to see all available options: [Parameters](#parameters)
+Go the parameters section to see all available options: [Parameters](#%EF%B8%8F-parameters)
 
 Using a configuration file in YAML format:
 
@@ -219,6 +219,11 @@ You can use the `--help` flag to see all available options.
  - `output` (string) output directory for commands.
  - `log` (string) directory to save the log of the conversation, if empty the log will be only printed to the console.
  - `steps` (int) number of steps to run, if 0 it will run until the goal is achieved or indefinitely.
+
+### Bulk parameteres
+
+ - `bulk-in` (string) path to the input file with the prompts.
+ - `bulk-out` (string) path to the output file with the responses.
 
 ### Google parameters
 
