@@ -49,6 +49,7 @@ func newCommand() *ffcli.Command {
 			newRunCommand("auto"),
 			newRunCommand("pair"),
 			newRunCommand("cmd"),
+			newRunCommand("bulk"),
 			newCreateBingSessionCommand(),
 			newVersionCommand(),
 		},
@@ -68,6 +69,10 @@ func newRunCommand(action string) *ffcli.Command {
 	fs.StringVar(&cfg.Output, "output", "output", "output directory (optional)")
 	fs.StringVar(&cfg.LogDir, "log", "logs", "log path, if empty, only logs to stdout (optional)")
 	fs.IntVar(&cfg.Steps, "steps", 0, "number of steps to run, if unset, it will run until it exits (optional)")
+
+	// Bulk files
+	fs.StringVar(&cfg.BulkInput, "bulk-in", "", "bulk input file")
+	fs.StringVar(&cfg.BulkOutput, "bulk-out", "", "bulk output file")
 
 	// Google
 	fs.StringVar(&cfg.GoogleKey, "google-key", "", "google api key, see https://developers.google.com/custom-search/v1/introduction")
