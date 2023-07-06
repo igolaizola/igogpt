@@ -29,6 +29,10 @@ type Config struct {
 	LogDir string `yaml:"log-dir"`
 	Steps  int    `yaml:"steps"`
 
+	// Bulk parameters
+	BulkInput  string `yaml:"bulk-input"`
+	BulkOutput string `yaml:"bulk-output"`
+
 	// Google parameters
 	GoogleKey string `yaml:"google-key"`
 	GoogleCX  string `yaml:"google-cx"`
@@ -56,6 +60,8 @@ func Run(ctx context.Context, action string, cfg *Config) error {
 		return Auto(ctx, cfg)
 	case "chat":
 		return Chat(ctx, cfg)
+	case "bulk":
+		return Bulk(ctx, cfg)
 	case "cmd":
 		return Cmd(ctx, cfg)
 	default:
@@ -311,6 +317,183 @@ func Pair(ctx context.Context, cfg *Config) error {
 	case err := <-err2:
 		return err
 	}
+}
+
+type BulkOutput [][]inOut
+
+type inOut struct {
+	In  string `json:"in"`
+	Out string `json:"out"`
+}
+
+func Bulk(ctx context.Context, cfg *Config) error {
+	if cfg.BulkInput == "" {
+		return fmt.Errorf("igogpt: bulk input is required")
+	}
+	if cfg.BulkOutput == "" {
+		return fmt.Errorf("igogpt: bulk output is required")
+	}
+
+	// Read bulk input file
+	b, err := os.ReadFile(cfg.BulkInput)
+	if err != nil {
+		return fmt.Errorf("igogpt: couldn't read bulk input file: %w", err)
+	}
+	var inputs [][]string
+
+	if filepath.Ext(cfg.BulkInput) == ".json" {
+		var list []any
+		if err := json.Unmarshal(b, &list); err != nil {
+			return fmt.Errorf("igogpt: couldn't unmarshal bulk input file: %w", err)
+		}
+		if len(list) == 0 {
+			return fmt.Errorf("igogpt: no inputs found in bulk input file")
+		}
+		for _, elem := range list {
+			// Check if input is a string or an array of strings
+			switch vv := elem.(type) {
+			case string:
+				if vv == "" {
+					continue
+				}
+				inputs = append(inputs, []string{vv})
+			case []any:
+				var group []string
+				for _, v := range vv {
+					s, ok := v.(string)
+					if !ok {
+						return fmt.Errorf("igogpt: bulk input file must contain strings or arrays of strings")
+					}
+					if s == "" {
+						continue
+					}
+					group = append(group, s)
+				}
+				if len(group) == 0 {
+					continue
+				}
+				inputs = append(inputs, group)
+			default:
+				return fmt.Errorf("igogpt: bulk input file must contain strings or arrays of strings")
+			}
+		}
+	} else {
+		// Split by double newlines
+		list := strings.Split(string(b), "\n\n")
+		for _, elem := range list {
+			// Split group by newlines
+			group := strings.Split(elem, "\n")
+			if len(group) == 0 {
+				continue
+			}
+			// Remove empty lines
+			var filtered []string
+			for _, s := range group {
+				if s != "" {
+					filtered = append(filtered, s)
+				}
+			}
+			inputs = append(inputs, filtered)
+		}
+	}
+
+	// Create main chat
+	var chatFunc func() (io.ReadWriter, func(), error)
+	switch cfg.AI {
+	case "bing":
+		// Create bing client
+		bingClient, err := bing.New(cfg.BingWait, &cfg.BingSession, cfg.BingSessionFile, cfg.Proxy)
+		if err != nil {
+			return fmt.Errorf("igogpt: couldn't create bing client: %w", err)
+		}
+		chatFunc = func() (io.ReadWriter, func(), error) {
+			c, err := bingClient.Chat(ctx)
+			if err != nil {
+				return nil, nil, err
+			}
+			return c, func() { _ = c.Close }, nil
+		}
+	case "chatgpt":
+		// Create chatgpt client
+		client, err := chatgpt.New(ctx, cfg.ChatgptWait, cfg.ChatgptRemote, cfg.Proxy, true)
+		if err != nil {
+			return fmt.Errorf("igogpt: couldn't create chatgpt client: %w", err)
+		}
+		defer client.Close()
+		chatFunc = func() (io.ReadWriter, func(), error) {
+			c, err := client.Chat(ctx, cfg.Model)
+			if err != nil {
+				return nil, nil, err
+			}
+			return c, func() { _ = c.Close }, nil
+		}
+	case "openai":
+		// Create openai client
+		client := openai.New(cfg.OpenaiKey, cfg.OpenaiWait, cfg.OpenaiMaxTokens)
+		chatFunc = func() (io.ReadWriter, func(), error) {
+			return client.Chat(ctx, cfg.Model, "system", fixed.NewFixedMemory(1, cfg.OpenaiMaxTokens)), func() {}, nil
+		}
+	default:
+		return fmt.Errorf("igogpt: invalid ai: %s", cfg.AI)
+	}
+
+	var exit bool
+	var output BulkOutput
+	for _, prompts := range inputs {
+		if exit {
+			break
+		}
+		chat, close, err := chatFunc()
+		if err != nil {
+			return fmt.Errorf("igogpt: couldn't create chat: %w", err)
+		}
+		var msgs []inOut
+		for _, prmpt := range prompts {
+			if exit {
+				break
+			}
+			// Check context
+			select {
+			case <-ctx.Done():
+				exit = true
+				continue
+			default:
+			}
+
+			// Write to chat
+			log.Println(prmpt)
+			if _, err := chat.Write([]byte(prmpt)); err != nil {
+				return fmt.Errorf("igogpt: couldn't write message to chatgpt: %w", err)
+			}
+
+			// Read from chat
+			buf := make([]byte, 1024*64)
+			n, err := chat.Read(buf)
+			if err != nil {
+				return fmt.Errorf("igogpt: couldn't read message from chatgpt: %w", err)
+			}
+			recv := string(buf[:n])
+			log.Println(recv)
+
+			msgs = append(msgs, inOut{In: prmpt, Out: recv})
+		}
+		close()
+		output = append(output, msgs)
+	}
+	// Marshal output
+	b, err = json.MarshalIndent(output, "", "  ")
+	if err != nil {
+		return fmt.Errorf("igogpt: couldn't marshal output: %w", err)
+	}
+	// Create output directory if it doesn't exist
+	if err := os.MkdirAll(filepath.Dir(cfg.BulkOutput), 0755); err != nil {
+		return fmt.Errorf("igogpt: couldn't create output directory: %w", err)
+	}
+	// Write output to file
+	if err := os.WriteFile(cfg.BulkOutput, b, 0644); err != nil {
+		return fmt.Errorf("igogpt: couldn't write output: %w", err)
+	}
+	return nil
 }
 
 // Cmd runs a command and returns the result

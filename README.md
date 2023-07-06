@@ -27,6 +27,10 @@ This allows more interaction in fewer steps.
 
 Connect one chat with another chat and let them talk to each other.
 
+### Bulk mode
+
+Generate a list of prompts and run all of them one by one.
+
 ### Chats that implement `io.ReadWriter`
 
 You can import the libraries in the `pkg` directory to use Bing or ChatGPT as `io.ReadWriter` in your own projects.
@@ -124,6 +128,62 @@ Use standard input and output to communicate with the chatbot.
 
 ```bash
 igogpt chat --config igogpt.yaml
+```
+
+#### Bulk mode
+
+Bulk mode reads a list of prompts from a file and runs them one by one. You can group prompts so that each group runs in a different chat.
+
+```bash
+igogpt bulk --config igogpt.yaml --bulk-in prompts.txt --bulk-out output.json
+```
+
+The input file can be a JSON file with a list (or lists) of prompts.
+Each sublist will be launched in a different chat.
+
+```json
+[
+    ["prompt 1 in chat 1", "prompt 2 in chat 1"],
+    ["prompt 1 in chat 2", "prompt 2 in chat 2"],
+]
+```
+
+Alternatively, the input can be a text file with one prompt per line.
+Use an empty line to separate prompts in different chats.
+
+```text
+prompt 1 in chat 1
+prompt 2 in chat 1
+
+prompt 1 in chat 2
+prompt 2 in chat 2
+```
+
+The output file will be a JSON file containing all the prompts and their corresponding responses.
+
+```json
+[
+    [
+        {
+            "in": "prompt 1 in chat 1",
+            "out": "response 1 in chat 1"
+        },
+        {
+            "in": "prompt 2 in chat 1",
+            "out": "response 2 in chat 1"
+        },
+    ],
+    [
+        {
+            "in": "prompt 1 in chat 1",
+            "out": "response 1 in chat 1"
+        },
+        {
+            "in": "prompt 2 in chat 1",
+            "out": "response 2 in chat 1"
+        },
+    ],
+]
 ```
 
 ### Create bing session (only for the first time)
