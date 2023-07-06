@@ -13,6 +13,9 @@ import (
 	"sync"
 	"time"
 
+	htmlmd "github.com/JohannesKaufmann/html-to-markdown"
+	"github.com/PuerkitoBio/goquery"
+	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
@@ -264,6 +267,7 @@ type conversation struct {
 	Model           string `json:"model"`
 	TimezoneOffset  int    `json:"timezone_offset_min"`
 	VariantPurpose  string `json:"variant_purpose"`
+	ConversationID  string `json:"conversation_id"`
 }
 
 // Write sends a message to the chat.
@@ -275,7 +279,7 @@ func (r *rw) Write(b []byte) (n int, err error) {
 	msg := strings.TrimSpace(string(b))
 
 	for {
-		err := r.sendMessage(r.ctx, msg)
+		err := r.sendMessage(msg)
 		if errors.Is(err, errTooManyRequests) {
 			// Too many requests, wait for 5 minutes and try again
 			log.Println("chatgpt: too many requests, waiting for 5 minutes...")
@@ -309,7 +313,7 @@ func (r *rw) Write(b []byte) (n int, err error) {
 
 var errTooManyRequests = errors.New("chatgpt: too many requests")
 
-func (r *rw) sendMessage(ctx context.Context, msg string) error {
+func (r *rw) sendMessage(msg string) error {
 	// Send the message
 	for {
 		ctx, cancel := context.WithTimeout(r.ctx, 10*time.Second)
@@ -346,9 +350,8 @@ func (r *rw) sendMessage(ctx context.Context, msg string) error {
 		}
 	}
 
-	// Obtain response from combination of conversation and moderation requests
+	// Obtain the conversation ID and check errors
 	var lck sync.Mutex
-	var conv *conversation
 	wait, done := context.WithCancel(r.ctx)
 	defer done()
 	chromedp.ListenTarget(
@@ -383,20 +386,9 @@ func (r *rw) sendMessage(ctx context.Context, msg string) error {
 					if err := json.Unmarshal(v, &c); err != nil {
 						return
 					}
-					if len(c.Messages) == 0 || c.Messages[0].ID == "" {
-						log.Println("chatgpt: messsage id not found", string(v))
-						return
+					if r.conversationID == "" && c.ConversationID != "" {
+						r.conversationID = c.ConversationID
 					}
-					if len(c.Messages[0].Content.Parts) == 0 {
-						log.Println("chatgpt: message content not found", string(v))
-						return
-					}
-					convMsg := c.Messages[0].Content.Parts[0]
-					if strings.TrimSpace(convMsg) != strings.TrimSpace(msg) {
-						// Skip mismatched messages
-						return
-					}
-					conv = &c
 				case "https://chat.openai.com/backend-api/moderations":
 					lck.Lock()
 					defer lck.Unlock()
@@ -411,28 +403,26 @@ func (r *rw) sendMessage(ctx context.Context, msg string) error {
 					if err := json.Unmarshal(v, &m); err != nil {
 						return
 					}
-					if conv == nil {
-						log.Printf("chatgpt: moderation received before conversation: %s\n", string(v))
-						return
-					}
-					if m.MessageID == conv.Messages[0].ID {
-						return
-					}
-					prefix := fmt.Sprintf("%s\n%s\n\n", r.lastResponse, conv.Messages[0].Content.Parts[0])
-					if !strings.HasPrefix(m.Input, prefix) {
-						return
-					}
-					if r.conversationID == "" {
+					if r.conversationID == "" && m.ConversationID != "" {
 						r.conversationID = m.ConversationID
 					}
-					r.lastResponse = strings.TrimPrefix(m.Input, prefix)
-					done()
 				default:
 					return
 				}
 			}
 		},
 	)
+
+	// Count the number of div.group.w-full
+	ctx, cancel := context.WithTimeout(r.ctx, 500*time.Millisecond)
+	defer cancel()
+	var nodes []*cdp.Node
+	if err := chromedp.Run(ctx,
+		chromedp.Nodes("div.group.w-full", &nodes, chromedp.ByQuery),
+	); err != nil && ctx.Err() == nil {
+		return fmt.Errorf("chatgpt: couldn't count divs before click: %w", err)
+	}
+	want := len(nodes) + 2
 
 	// Click on the send button
 	d := time.Duration(200+rand.Intn(200)) * time.Millisecond
@@ -446,12 +436,84 @@ func (r *rw) sendMessage(ctx context.Context, msg string) error {
 	}
 
 	// Wait for the response
-	select {
-	case <-wait.Done():
-		return nil
-	case <-r.ctx.Done():
-		return r.ctx.Err()
+	for {
+		if err := chromedp.Run(r.ctx,
+			chromedp.Nodes("div.group.w-full", &nodes, chromedp.ByQueryAll),
+		); err != nil {
+			return fmt.Errorf("chatgpt: couldn't count divs before click: %w", err)
+		}
+		if len(nodes) < want {
+			continue
+		}
+		break
 	}
+
+	// Wait for the regeneration button to appear
+	for {
+		select {
+		case <-time.After(500 * time.Millisecond):
+		case <-r.ctx.Done():
+			return r.ctx.Err()
+		}
+
+		// Obtain the html of the full page
+		var html string
+		if err := chromedp.Run(r.ctx,
+			chromedp.OuterHTML("html", &html),
+		); err != nil {
+			return fmt.Errorf("chatgpt: couldn't get html: %w", err)
+		}
+		doc, err := goquery.NewDocumentFromReader(strings.NewReader(html))
+		if err != nil {
+			panic(err)
+		}
+
+		// Search for buttons
+		var regenerateFound bool
+		var continueIndex int
+		doc.Find("form button").Each(func(i int, s *goquery.Selection) {
+			if strings.Contains(strings.ToLower(s.Text()), "continue generating") {
+				continueIndex = i + 1
+			}
+			if strings.Contains(strings.ToLower(s.Text()), "regenerate response") {
+				regenerateFound = true
+			}
+		})
+
+		// If the continue button is found, click on it and continue
+		if continueIndex > 0 {
+			if err := chromedp.Run(r.ctx,
+				chromedp.WaitVisible(fmt.Sprintf("form button:nth-child(%d)", continueIndex), chromedp.ByQuery),
+				chromedp.Click(fmt.Sprintf("form button:nth-child(%d)", continueIndex), chromedp.ByQuery),
+			); err != nil {
+				return fmt.Errorf("chatgpt: couldn't click continue button: %w", err)
+			}
+			continue
+		}
+
+		// If the regenerate button is not found, continue
+		if !regenerateFound {
+			continue
+		}
+
+		// Get the last div html
+		lastDiv := doc.Find("div.group.w-full div.gap-3 div.markdown").Last()
+		h, err := lastDiv.Html()
+		if err != nil {
+			return fmt.Errorf("chatgpt: couldn't get html: %w", err)
+		}
+
+		// Convert the html to markdown
+		converter := htmlmd.NewConverter("", true, nil)
+		md, err := converter.ConvertString(h)
+		if err != nil {
+			return fmt.Errorf("chatgpt: couldn't convert html to markdown: %w", err)
+		}
+
+		r.lastResponse = md
+		break
+	}
+	return nil
 }
 
 // Close closes the chat.
