@@ -19,9 +19,9 @@ import (
 )
 
 // Build flags
-var Version = ""
-var Commit = ""
-var Date = ""
+var version = ""
+var commit = ""
+var date = ""
 
 func main() {
 	// Create signal based context
@@ -158,7 +158,7 @@ func newVersionCommand() *ffcli.Command {
 		ShortUsage: "igogpt version",
 		ShortHelp:  "print version",
 		Exec: func(ctx context.Context, args []string) error {
-			v := Version
+			v := version
 			if v == "" {
 				if buildInfo, ok := debug.ReadBuildInfo(); ok {
 					v = buildInfo.Main.Version
@@ -168,11 +168,11 @@ func newVersionCommand() *ffcli.Command {
 				v = "dev"
 			}
 			versionFields := []string{v}
-			if Commit != "" {
-				versionFields = append(versionFields, Commit)
+			if commit != "" {
+				versionFields = append(versionFields, commit)
 			}
-			if Date != "" {
-				versionFields = append(versionFields, Date)
+			if date != "" {
+				versionFields = append(versionFields, date)
 			}
 			fmt.Println(strings.Join(versionFields, " "))
 			return nil
