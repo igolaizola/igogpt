@@ -186,6 +186,9 @@ The output file will be a JSON file containing all the prompts and their corresp
 ]
 ```
 
+If you prefix your message with `!` while using ChatGPT, it will edit the last message instead of sending a new one.
+You can use `!n` to edit the nth message.
+
 ### Create bing session (only for the first time)
 
 If you want to use the Bing search engine, you need to create a session file with the Bing cookies and other information retrieved from your browser.
