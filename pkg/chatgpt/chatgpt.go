@@ -9,6 +9,8 @@ import (
 	"io"
 	"log"
 	"math/rand"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -313,41 +315,132 @@ func (r *rw) Write(b []byte) (n int, err error) {
 
 var errTooManyRequests = errors.New("chatgpt: too many requests")
 
-func (r *rw) sendMessage(msg string) error {
-	// Send the message
-	for {
-		ctx, cancel := context.WithTimeout(r.ctx, 10*time.Second)
-		if err := chromedp.Run(ctx,
-			// Update the textarea value with the message
-			chromedp.WaitVisible("textarea", chromedp.ByQuery),
-			chromedp.SetValue("textarea", msg, chromedp.ByQuery),
-		); err != nil {
-			log.Println(fmt.Errorf("chatgpt: couldn't type message: %w", err))
-			cancel()
-			log.Println("chatgpt: waiting for message to be typed...", msg)
-			continue
-		}
-		cancel()
-		break
-	}
+var editMessageRegex = regexp.MustCompile(`^!(\d+)?(.*)`)
 
-	// Obtain the value of the textarea to check if the message was typed
-	for {
-		var textarea string
-		if err := chromedp.Run(r.ctx,
-			chromedp.Value("textarea", &textarea, chromedp.ByQuery),
-		); err != nil {
-			return fmt.Errorf("chatgpt: couldn't obtain textarea value: %w", err)
-		}
-		if strings.TrimSpace(textarea) == strings.TrimSpace(msg) {
+func (r *rw) sendMessage(msg string) error {
+	sendButton := "textarea + button"
+	want := 0
+
+	match := editMessageRegex.FindStringSubmatch(msg)
+	if len(match) < 3 {
+		// Send the message
+		for {
+			ctx, cancel := context.WithTimeout(r.ctx, 10*time.Second)
+			if err := chromedp.Run(ctx,
+				// Update the textarea value with the message
+				chromedp.WaitVisible("textarea", chromedp.ByQuery),
+				chromedp.SetValue("textarea", msg, chromedp.ByQuery),
+			); err != nil {
+				log.Println(fmt.Errorf("chatgpt: couldn't type message: %w", err))
+				cancel()
+				log.Println("chatgpt: waiting for message to be typed...", msg)
+				continue
+			}
+			cancel()
 			break
 		}
-		log.Println("chatgpt: waiting for textarea to be updated...")
-		select {
-		case <-r.ctx.Done():
-			return r.ctx.Err()
-		case <-time.After(100 * time.Millisecond):
+
+		// Obtain the value of the textarea to check if the message was typed
+		for {
+			var textarea string
+			if err := chromedp.Run(r.ctx,
+				chromedp.Value("textarea", &textarea, chromedp.ByQuery),
+			); err != nil {
+				return fmt.Errorf("chatgpt: couldn't obtain textarea value: %w", err)
+			}
+			if strings.TrimSpace(textarea) == strings.TrimSpace(msg) {
+				break
+			}
+			log.Println("chatgpt: waiting for textarea to be updated...")
+			select {
+			case <-r.ctx.Done():
+				return r.ctx.Err()
+			case <-time.After(100 * time.Millisecond):
+			}
 		}
+	} else {
+		// Obtain the nth message to edit
+		var editNum int
+		if n := match[1]; n != "" {
+			parsed, err := strconv.Atoi(n)
+			if err != nil {
+				return fmt.Errorf("chatgpt: invalid edit message (%s): %w", msg, err)
+			}
+			editNum = parsed * 2
+		}
+		// Trim the message
+		msg = strings.TrimSpace(match[2])
+
+		// Wait until we can edit messages
+		for {
+			ctx, cancel := context.WithTimeout(r.ctx, 10*time.Second)
+			if err := chromedp.Run(ctx,
+				chromedp.WaitVisible("textarea", chromedp.ByQuery),
+			); err != nil {
+				cancel()
+				log.Println("chatgpt: waiting for messages to be editable...")
+				continue
+			}
+			cancel()
+			break
+		}
+
+		// Obtain the html of the main div
+		var html string
+		if err := chromedp.Run(r.ctx,
+			chromedp.OuterHTML("div.max-w-full.flex-col", &html),
+		); err != nil {
+			return fmt.Errorf("chatgpt: couldn't get html: %w", err)
+		}
+		doc, err := goquery.NewDocumentFromReader(strings.NewReader(html))
+		if err != nil {
+			panic(err)
+		}
+
+		// Obtain the number of messages
+		var n int
+		doc.Find("div.max-w-full.flex-col div.group").Each(func(i int, s *goquery.Selection) {
+			n = i + 1
+		})
+		if n == 0 {
+			return fmt.Errorf("chatgpt: couldn't find any messages")
+		}
+		if editNum == 0 {
+			editNum = n
+		}
+		if n < editNum {
+			return fmt.Errorf("chatgpt: got %d messages, want %d", n, editNum)
+		}
+		msgPath := fmt.Sprintf("div.max-w-full.flex-col div.group:nth-child(%d)", editNum-1)
+
+		// Click on the last message edit button
+		if err := chromedp.Run(r.ctx,
+			chromedp.Click(msgPath, chromedp.ByQuery),
+			chromedp.Click(msgPath+" button.p-1", chromedp.ByQuery),
+		); err != nil {
+			return fmt.Errorf("chatgpt: couldn't click edit %s: %w", msgPath, err)
+		}
+
+		// Send the message
+		for {
+			ctx, cancel := context.WithTimeout(r.ctx, 10*time.Second)
+			if err := chromedp.Run(ctx,
+				// Update the textarea value with the message
+				chromedp.WaitVisible(msgPath+" textarea", chromedp.ByQuery),
+				chromedp.SetValue(msgPath+" textarea", msg, chromedp.ByQuery),
+			); err != nil {
+				log.Println(fmt.Errorf("chatgpt: couldn't edit message: %w", err))
+				cancel()
+				log.Println("chatgpt: waiting for message to be edited...", msg)
+				continue
+			}
+			cancel()
+			break
+		}
+
+		// Set send button path
+		sendButton = msgPath + " button:nth-child(1)"
+		want = editNum
 	}
 
 	// Obtain the conversation ID and check errors
@@ -413,24 +506,25 @@ func (r *rw) sendMessage(msg string) error {
 		},
 	)
 
-	// Count the number of div.group.w-full
+	// Count the number of div.group
 	ctx, cancel := context.WithTimeout(r.ctx, 500*time.Millisecond)
 	defer cancel()
 	var nodes []*cdp.Node
 	if err := chromedp.Run(ctx,
-		chromedp.Nodes("div.group.w-full", &nodes, chromedp.ByQuery),
+		chromedp.Nodes("div.max-w-full.flex-col div.group", &nodes, chromedp.ByQuery),
 	); err != nil && ctx.Err() == nil {
 		return fmt.Errorf("chatgpt: couldn't count divs before click: %w", err)
 	}
-	want := len(nodes) + 2
+	if want == 0 {
+		want = len(nodes) + 2
+	}
 
 	// Click on the send button
 	d := time.Duration(200+rand.Intn(200)) * time.Millisecond
 	<-time.After(d)
 	if err := chromedp.Run(r.ctx,
-		chromedp.WaitVisible("textarea + button", chromedp.ByQuery),
-		chromedp.Click("textarea", chromedp.ByQuery),
-		chromedp.Click("textarea + button", chromedp.ByQuery),
+		chromedp.WaitVisible(sendButton, chromedp.ByQuery),
+		chromedp.Click(sendButton, chromedp.ByQuery),
 	); err != nil {
 		return fmt.Errorf("chatgpt: couldn't click button: %w", err)
 	}
@@ -438,28 +532,32 @@ func (r *rw) sendMessage(msg string) error {
 	// Wait for the response
 	for {
 		if err := chromedp.Run(r.ctx,
-			chromedp.Nodes("div.group.w-full", &nodes, chromedp.ByQueryAll),
+			chromedp.Nodes("div.max-w-full.flex-col div.group", &nodes, chromedp.ByQueryAll),
 		); err != nil {
 			return fmt.Errorf("chatgpt: couldn't count divs before click: %w", err)
 		}
-		if len(nodes) < want {
-			continue
+		if len(nodes) >= want {
+			break
 		}
-		break
+		select {
+		case <-time.After(100 * time.Millisecond):
+		case <-r.ctx.Done():
+			return r.ctx.Err()
+		}
 	}
 
 	// Wait for the regeneration button to appear
 	for {
 		select {
-		case <-time.After(500 * time.Millisecond):
+		case <-time.After(100 * time.Millisecond):
 		case <-r.ctx.Done():
 			return r.ctx.Err()
 		}
 
-		// Obtain the html of the full page
+		// Obtain the html of the main div
 		var html string
 		if err := chromedp.Run(r.ctx,
-			chromedp.OuterHTML("html", &html),
+			chromedp.OuterHTML("div.max-w-full.flex-col", &html),
 		); err != nil {
 			return fmt.Errorf("chatgpt: couldn't get html: %w", err)
 		}
@@ -497,7 +595,7 @@ func (r *rw) sendMessage(msg string) error {
 		}
 
 		// Get the last div html
-		lastDiv := doc.Find("div.group.w-full div.gap-3 div.markdown").Last()
+		lastDiv := doc.Find("div.group div.markdown").Last()
 		h, err := lastDiv.Html()
 		if err != nil {
 			return fmt.Errorf("chatgpt: couldn't get html: %w", err)
