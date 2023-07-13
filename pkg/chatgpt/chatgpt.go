@@ -319,6 +319,7 @@ var editMessageRegex = regexp.MustCompile(`^!(\d+)?(.*)`)
 
 func (r *rw) sendMessage(msg string) error {
 	sendButton := "textarea + button"
+	sendButtonQuery := chromedp.ByQuery
 	want := 0
 
 	match := editMessageRegex.FindStringSubmatch(msg)
@@ -374,10 +375,14 @@ func (r *rw) sendMessage(msg string) error {
 		// Wait until we can edit messages
 		for {
 			ctx, cancel := context.WithTimeout(r.ctx, 10*time.Second)
-			if err := chromedp.Run(ctx,
+			err := chromedp.Run(ctx,
 				chromedp.WaitVisible("textarea", chromedp.ByQuery),
-			); err != nil {
-				cancel()
+			)
+			cancel()
+			if r.ctx.Err() != nil {
+				return r.ctx.Err()
+			}
+			if err != nil {
 				log.Println("chatgpt: waiting for messages to be editable...")
 				continue
 			}
@@ -411,35 +416,45 @@ func (r *rw) sendMessage(msg string) error {
 		if n < editNum {
 			return fmt.Errorf("chatgpt: got %d messages, want %d", n, editNum)
 		}
-		msgPath := fmt.Sprintf("div.max-w-full.flex-col div.group:nth-child(%d)", editNum-1)
 
-		// Click on the last message edit button
+		// Obtain the path of the message to edit
+		// TODO: this is hard to maintain, find a better way to obtain the path
+		msgPath := fmt.Sprintf("/html/body/div/div/div[2]/div/main/div[2]/div/div/div/div[%d]/div/div[2]", editNum-1)
+		editPath := fmt.Sprintf("%s/div[2]/button", msgPath)
+		textareaPath := fmt.Sprintf("%s/div/textarea", msgPath)
+		submitPath := fmt.Sprintf("%s/div/div/button", msgPath)
+
+		// Click on the message edit button
 		if err := chromedp.Run(r.ctx,
-			chromedp.Click(msgPath, chromedp.ByQuery),
-			chromedp.Click(msgPath+" button.p-1", chromedp.ByQuery),
+			chromedp.Click(msgPath, chromedp.BySearch),
+			chromedp.Click(editPath, chromedp.BySearch),
 		); err != nil {
-			return fmt.Errorf("chatgpt: couldn't click edit %s: %w", msgPath, err)
+			return fmt.Errorf("chatgpt: couldn't click edit button %w", err)
 		}
 
 		// Send the message
 		for {
 			ctx, cancel := context.WithTimeout(r.ctx, 10*time.Second)
-			if err := chromedp.Run(ctx,
+			err := chromedp.Run(ctx,
 				// Update the textarea value with the message
-				chromedp.WaitVisible(msgPath+" textarea", chromedp.ByQuery),
-				chromedp.SetValue(msgPath+" textarea", msg, chromedp.ByQuery),
-			); err != nil {
+				chromedp.WaitVisible(textareaPath, chromedp.BySearch),
+				chromedp.SetValue(textareaPath, msg, chromedp.BySearch),
+			)
+			cancel()
+			if r.ctx.Err() != nil {
+				return r.ctx.Err()
+			}
+			if err != nil {
 				log.Println(fmt.Errorf("chatgpt: couldn't edit message: %w", err))
-				cancel()
 				log.Println("chatgpt: waiting for message to be edited...", msg)
 				continue
 			}
-			cancel()
 			break
 		}
 
 		// Set send button path
-		sendButton = msgPath + " button:nth-child(1)"
+		sendButton = submitPath
+		sendButtonQuery = chromedp.BySearch
 		want = editNum
 	}
 
@@ -523,8 +538,8 @@ func (r *rw) sendMessage(msg string) error {
 	d := time.Duration(200+rand.Intn(200)) * time.Millisecond
 	<-time.After(d)
 	if err := chromedp.Run(r.ctx,
-		chromedp.WaitVisible(sendButton, chromedp.ByQuery),
-		chromedp.Click(sendButton, chromedp.ByQuery),
+		chromedp.WaitVisible(sendButton, sendButtonQuery),
+		chromedp.Click(sendButton, sendButtonQuery),
 	); err != nil {
 		return fmt.Errorf("chatgpt: couldn't click button: %w", err)
 	}
