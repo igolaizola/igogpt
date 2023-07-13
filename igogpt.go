@@ -439,7 +439,29 @@ func Bulk(ctx context.Context, cfg *Config) error {
 
 	var exit bool
 	var output BulkOutput
-	for _, prompts := range inputs {
+
+	save := func() error {
+		// Marshal output
+		b, err = json.MarshalIndent(output, "", "  ")
+		if err != nil {
+			return fmt.Errorf("igogpt: couldn't marshal output: %w", err)
+		}
+		// Create output directory if it doesn't exist
+		if err := os.MkdirAll(filepath.Dir(cfg.BulkOutput), 0755); err != nil {
+			return fmt.Errorf("igogpt: couldn't create output directory: %w", err)
+		}
+		// Write output to file
+		if err := os.WriteFile(cfg.BulkOutput, b, 0644); err != nil {
+			return fmt.Errorf("igogpt: couldn't write output: %w", err)
+		}
+		return nil
+	}
+	// Generate initial output
+	if err := save(); err != nil {
+		return err
+	}
+
+	for i, prompts := range inputs {
 		if exit {
 			break
 		}
@@ -448,6 +470,7 @@ func Bulk(ctx context.Context, cfg *Config) error {
 			return fmt.Errorf("igogpt: couldn't create chat: %w", err)
 		}
 		var msgs []inOut
+		output = append(output, msgs)
 		for _, prmpt := range prompts {
 			if exit {
 				break
@@ -476,22 +499,14 @@ func Bulk(ctx context.Context, cfg *Config) error {
 			log.Println(recv)
 
 			msgs = append(msgs, inOut{In: prmpt, Out: recv})
+			output[i] = msgs
+
+			// Save output
+			if err := save(); err != nil {
+				return err
+			}
 		}
 		close()
-		output = append(output, msgs)
-	}
-	// Marshal output
-	b, err = json.MarshalIndent(output, "", "  ")
-	if err != nil {
-		return fmt.Errorf("igogpt: couldn't marshal output: %w", err)
-	}
-	// Create output directory if it doesn't exist
-	if err := os.MkdirAll(filepath.Dir(cfg.BulkOutput), 0755); err != nil {
-		return fmt.Errorf("igogpt: couldn't create output directory: %w", err)
-	}
-	// Write output to file
-	if err := os.WriteFile(cfg.BulkOutput, b, 0644); err != nil {
-		return fmt.Errorf("igogpt: couldn't write output: %w", err)
 	}
 	return nil
 }
