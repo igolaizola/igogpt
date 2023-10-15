@@ -318,7 +318,12 @@ var errTooManyRequests = errors.New("chatgpt: too many requests")
 var editMessageRegex = regexp.MustCompile(`^!(\d+)?(.*)`)
 
 func (r *rw) sendMessage(msg string) error {
-	sendButton := "textarea + button"
+	sendButtons := []string{
+		// When upload image is disabled
+		"textarea + button",
+		// When upload image is enabled
+		"textarea + div + button",
+	}
 	sendButtonQuery := chromedp.ByQuery
 	want := 0
 
@@ -453,7 +458,7 @@ func (r *rw) sendMessage(msg string) error {
 		}
 
 		// Set send button path
-		sendButton = submitPath
+		sendButtons = []string{submitPath}
 		sendButtonQuery = chromedp.BySearch
 		want = editNum
 	}
@@ -537,11 +542,23 @@ func (r *rw) sendMessage(msg string) error {
 	// Click on the send button
 	d := time.Duration(200+rand.Intn(200)) * time.Millisecond
 	<-time.After(d)
-	if err := chromedp.Run(r.ctx,
-		chromedp.WaitVisible(sendButton, sendButtonQuery),
-		chromedp.Click(sendButton, sendButtonQuery),
-	); err != nil {
-		return fmt.Errorf("chatgpt: couldn't click button: %w", err)
+	ctx, cancel = context.WithCancel(r.ctx)
+	defer cancel()
+	for _, sendButton := range sendButtons {
+		sendButton := sendButton
+		go func() {
+			if err := chromedp.Run(ctx,
+				chromedp.WaitVisible(sendButton, sendButtonQuery),
+				chromedp.Click(sendButton, sendButtonQuery),
+			); err == nil {
+				cancel()
+			}
+		}()
+	}
+	select {
+	case <-ctx.Done():
+	case <-r.ctx.Done():
+		return fmt.Errorf("chatgpt: waiting for send button: %w", r.ctx.Err())
 	}
 
 	// Wait for the response
@@ -557,7 +574,7 @@ func (r *rw) sendMessage(msg string) error {
 		select {
 		case <-time.After(100 * time.Millisecond):
 		case <-r.ctx.Done():
-			return r.ctx.Err()
+			return fmt.Errorf("chatgpt: waiting for response: %w", r.ctx.Err())
 		}
 	}
 
@@ -566,7 +583,7 @@ func (r *rw) sendMessage(msg string) error {
 		select {
 		case <-time.After(100 * time.Millisecond):
 		case <-r.ctx.Done():
-			return r.ctx.Err()
+			return fmt.Errorf("chatgpt: waiting for the regeneration button: %w", r.ctx.Err())
 		}
 
 		// Obtain the html of the main div
@@ -585,10 +602,10 @@ func (r *rw) sendMessage(msg string) error {
 		var regenerateFound bool
 		var continueIndex int
 		doc.Find("form button").Each(func(i int, s *goquery.Selection) {
-			if strings.Contains(strings.ToLower(s.Text()), "continue generating") {
+			if strings.Contains(strings.ToLower(s.Text()), "continue") {
 				continueIndex = i + 1
 			}
-			if strings.Contains(strings.ToLower(s.Text()), "regenerate response") {
+			if strings.Contains(strings.ToLower(s.Text()), "regenerate") {
 				regenerateFound = true
 			}
 		})
