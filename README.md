@@ -6,7 +6,7 @@
 
 This is a work in progress, so expect bugs and missing features.
 
-> 📢 Connect with us! Join our Telegram group for support and collaboration: [t.me/igolaizola_com](https://t.me/igolaizola_com)
+> 📢 Connect with us! Join our Telegram group for support and collaboration: [t.me/igohub](https://t.me/igohub)
 
 ## 🚀 Features
 
