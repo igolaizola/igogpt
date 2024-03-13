@@ -317,7 +317,42 @@ var errTooManyRequests = errors.New("chatgpt: too many requests")
 
 var editMessageRegex = regexp.MustCompile(`^!(\d+)?(.*)`)
 
+var imageMessageRegex = regexp.MustCompile(`^!image "(.*)"(.*)`)
+
 func (r *rw) sendMessage(msg string) error {
+	imageMatch := imageMessageRegex.FindStringSubmatch(msg)
+	if len(imageMatch) >= 3 {
+		image := imageMatch[1]
+		msg = imageMatch[2]
+		if err := chromedp.Run(r.ctx,
+			chromedp.SetUploadFiles("input", []string{image}),
+		); err != nil {
+			return fmt.Errorf("chatgpt: couldn't upload image: %w", err)
+		}
+		<-time.After(100 * time.Millisecond)
+		// Wait until the image is uploaded
+		for {
+			var html string
+			if err := chromedp.Run(r.ctx,
+				chromedp.OuterHTML("form.stretch", &html),
+			); err != nil {
+				return fmt.Errorf("chatgpt: couldn't get html: %w", err)
+			}
+			doc, err := goquery.NewDocumentFromReader(strings.NewReader(html))
+			if err != nil {
+				return fmt.Errorf("chatgpt: couldn't parse html: %w", err)
+			}
+			var found bool
+			doc.Find("circle.-rotate-90").Each(func(i int, s *goquery.Selection) {
+				found = true
+			})
+			if found {
+				continue
+			}
+			break
+		}
+	}
+
 	sendButtons := []string{
 		// When upload image is disabled
 		"textarea + button",
